@@ -18,18 +18,6 @@
  */
 package org.elasticsearch.river.jdbc.strategy.simple;
 
-import org.elasticsearch.action.bulk.BulkResponse;
-import org.elasticsearch.common.Base64;
-import org.elasticsearch.common.io.Streams;
-import org.elasticsearch.common.joda.time.DateTime;
-import org.elasticsearch.common.joda.time.format.DateTimeFormat;
-import org.elasticsearch.common.joda.time.format.DateTimeFormatter;
-import org.elasticsearch.common.logging.ESLogger;
-import org.elasticsearch.common.logging.ESLoggerFactory;
-import org.elasticsearch.river.jdbc.RiverSource;
-import org.elasticsearch.river.jdbc.support.RiverContext;
-import org.elasticsearch.river.jdbc.support.ValueListener;
-
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -59,6 +47,18 @@ import java.text.ParseException;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
+
+import org.elasticsearch.action.bulk.BulkResponse;
+import org.elasticsearch.common.Base64;
+import org.elasticsearch.common.io.Streams;
+import org.elasticsearch.common.joda.time.DateTime;
+import org.elasticsearch.common.joda.time.format.DateTimeFormat;
+import org.elasticsearch.common.joda.time.format.DateTimeFormatter;
+import org.elasticsearch.common.logging.ESLogger;
+import org.elasticsearch.common.logging.ESLoggerFactory;
+import org.elasticsearch.river.jdbc.RiverSource;
+import org.elasticsearch.river.jdbc.support.RiverContext;
+import org.elasticsearch.river.jdbc.support.ValueListener;
 
 /**
  * A river source implementation for the 'simple' strategy.
@@ -235,9 +235,9 @@ public class SimpleRiverSource implements RiverSource {
         ResultSet results;
         if (context.pollStatementParams().isEmpty()) {
             // Postgresql requires executeQuery(sql) for cursor with fetchsize
-            results = executeQuery(context.pollStatement());
+            results = executeQuery(getSql());
         } else {
-            statement = prepareQuery(context.pollStatement());
+            statement = prepareQuery(getSql());
             bind(statement, context.pollStatementParams());
             results = executeQuery(statement);
         }
@@ -309,6 +309,16 @@ public class SimpleRiverSource implements RiverSource {
         }
     }
 
+    private String getSql() throws IOException {
+        String sql = context.pollStatement();
+        if (sql.endsWith(".sql")) {
+            Reader r = new InputStreamReader(new FileInputStream(sql), "UTF-8");
+            sql = Streams.copyToString(r);
+            r.close();
+        }
+        return sql;
+    }
+
     /**
      * Prepare a query statement
      *
@@ -318,15 +328,6 @@ public class SimpleRiverSource implements RiverSource {
      */
     @Override
     public PreparedStatement prepareQuery(String sql) throws SQLException {
-        if (sql.endsWith(".sql")) {
-            try {
-                Reader r = new InputStreamReader(new FileInputStream(sql), "UTF-8");
-                sql = Streams.copyToString(r);
-                r.close();
-            } catch (IOException e) {
-                throw new SQLException("file not found: " + sql);
-            }
-        }
         Connection connection = connectionForReading();
         if (connection == null) {
             throw new SQLException("can't connect to source " + url);
@@ -431,6 +432,7 @@ public class SimpleRiverSource implements RiverSource {
         return this;
     }
 
+    @Override
     public void beforeFirstRow(ResultSet result, ValueListener listener)
             throws SQLException, IOException, ParseException {
         ResultSetMetaData metadata = result.getMetaData();
@@ -948,7 +950,7 @@ public class SimpleRiverSource implements RiverSource {
                     bd = result.getBigDecimal(i);
                 } catch (NullPointerException e) {
                     // getBigDecimal() should get obsolete. Most seem to use getString/getObject anyway...
-                    // But is it true? JDBC NPE exists since 13 years? 
+                    // But is it true? JDBC NPE exists since 13 years?
                     // http://forums.codeguru.com/archive/index.php/t-32443.html
                     // Null values are driving us nuts in JDBC:
                     // http://stackoverflow.com/questions/2777214/when-accessing-resultsets-in-jdbc-is-there-an-elegant-way-to-distinguish-betwee
